@@ -15,3 +15,10 @@ export const setLoop = (fn: (delta: number) => void) => {
 }
 
 export const arr = (len: number) => Array.from({ length: len }).fill(null)
+
+export const easeOutQuart = (x: number) => {
+  return 1 - Math.pow(1 - x, 4)
+}
+export const easeInOutSine = (x: number) => {
+  return -(Math.cos(Math.PI * x) - 1) / 2
+}
