@@ -38,12 +38,12 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.app_handle();
-            let device_state = DeviceState::new();
 
             let mut last_mouse_coords = (0, 0);
             let mut key_down: HashSet<Keycode> = HashSet::new();
 
             std::thread::spawn(move || loop {
+                let device_state = DeviceState::new();
                 let mouse = device_state.get_mouse();
                 let keys = device_state.get_keys();
 
