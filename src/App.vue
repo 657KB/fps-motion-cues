@@ -1,63 +1,171 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { arr, setLoop } from './utils'
-// import { event } from '@tauri-apps/api'
-// import { listen } from '@tauri-apps/api/event'
+import { listen } from '@tauri-apps/api/event'
+import { exit } from '@tauri-apps/api/process'
+import { animate, arr, easeInOutSine, setLoop, stopLoop } from './utils'
 
-// type Key = { code: string }
-// type MouseMove = { coords: [number, number] }
+type Key = { code: string }
+type Mouse = { coords: [number, number] }
+type Brightness = { brightness: [number, number, number] }
 
 const canvas0 = ref<HTMLCanvasElement | null>(null)
 const canvas1 = ref<HTMLCanvasElement | null>(null)
 const canvas2 = ref<HTMLCanvasElement | null>(null)
 
-const position = { x: 0, y: 0, z: 0 }
-const mouseCoords = { x: 0, y: 0 }
+const coef = {
+  z: 400,
+  pos: 1000,
+  jumpTime: 400,
+  jumpUp: 1.6,
+  fallDown: -1,
+}
 
-// The direction in which the player moves in the 3d coordinate axis
-const moveDirection : { [k: string]: number } = { x: 0, y: 0, z: 0 }
-// The direction of the mouse movement perspective
-const viewDirection = { x: 0, y: 0 }
+const draw = {
+  color: 'black',
+}
+const player = {
+  position: { x: 0, y: 0, z: 0 },
+  direction: { x: 0, y: 0, z: 0 },
+  speed: 300,
+}
+const mouse = {
+  coords: { x: 0, y: 0 },
+  $position: { x: 0, y: 0 },
+  position: { x: 0, y: 0 },
+  direction: { x: 0, y: 0 },
+  speed: 0,
+  maxSpeed: 16,
+  minSpeed: 10,
+}
 
-const moveSpeed = 2
+const coordsStatistics = new Map<string, number>()
+const centerCoords = { x: 0, y: 0 }
+let mostRecentlyCoordsCount = 0
 
-// const keydown = listen<Key>('key_down', event => {
-//   const { code } = event.payload
-//   if (code === 'W' || code === 'Up') {
-//     moveDirection.y -= 1
-//   } else if (code === 'A' || code === 'Left') {
-//     moveDirection.x += 1
-//   } else if (code === 'S' || code === 'Down') {
-//     moveDirection.y += 1
-//   } else if (code === 'D' || code === 'Right') {
-//     moveDirection.x -= 1
-//   } else if (code === 'Space') {
-//     moveDirection.z = 1
-//   }
-// })
+const cancelAnimFn: Function[] = []
 
-// const keyup = listen<Key>('key_up', event => {
-//   const { code } = event.payload
-//   if (code === 'W' || code === 'Up') {
-//     moveDirection.y += 1
-//   } else if (code === 'A' || code === 'Left') {
-//     moveDirection.x -= 1
-//   } else if (code === 'S' || code === 'Down') {
-//     moveDirection.y -= 1
-//   } else if (code === 'D' || code === 'Right') {
-//     moveDirection.x += 1
-//   } else if (code === 'Space') {
-//     moveDirection.z = 0
-//   }
-// })
+const exitKeyDown: string[] = []
 
-// const mousemove = listen<MouseMove>('mouse_move', event => {
-//   // console.log(event.payload.coords)
-// })
+const checkExit = () => {
+  if (exitKeyDown.length === 3
+    && exitKeyDown.findIndex(k => k === 'Q') !== -1
+    && exitKeyDown.findIndex(k => k === 'LShift') !== -1
+    && exitKeyDown.findIndex(k => k === 'LAlt') !== -1
+  ) exit(1)
+}
+
+const keydown = listen<Key>('key_down', event => {
+  const { code } = event.payload
+  if (code === 'W' || code === 'Up') {
+    player.direction.z += 1
+  } else if (code === 'A' || code === 'Left') {
+    player.direction.x += 1
+  } else if (code === 'S' || code === 'Down') {
+    player.direction.z -= 1
+  } else if (code === 'D' || code === 'Right') {
+    player.direction.x -= 1
+  } else if (code === 'Space') {
+    player.direction.y = coef.jumpUp
+  } else if (code === 'F9') {
+    mostRecentlyCoordsCount = 0
+  } else if (code === 'Q') {
+    exitKeyDown.push('Q')
+    checkExit()
+  } else if (code === 'LShift') {
+    exitKeyDown.push('LShift')
+    checkExit()
+  } else if (code === 'LAlt') {
+    exitKeyDown.push('LAlt')
+    checkExit()
+  }
+})
+
+const keyup = listen<Key>('key_up', event => {
+  const { code } = event.payload
+  if (code === 'W' || code === 'Up') {
+    player.direction.z -= 1
+  } else if (code === 'A' || code === 'Left') {
+    player.direction.x -= 1
+  } else if (code === 'S' || code === 'Down') {
+    player.direction.z += 1
+  } else if (code === 'D' || code === 'Right') {
+    player.direction.x += 1
+  } else if (code === 'Space') {
+    setTimeout(() => {
+      player.direction.y = coef.fallDown
+      setTimeout(() => {
+        player.direction.y = 0
+      }, coef.jumpTime / 2)
+    }, coef.jumpTime / 2)
+  } else if (code === 'Q') {
+    const i = exitKeyDown.findIndex(k => k === 'Q')
+    exitKeyDown.splice(i, 1)
+  } else if (code === 'LShift') {
+    const i = exitKeyDown.findIndex(k => k === 'LShift')
+    exitKeyDown.splice(i, 1)
+  } else if (code === 'LAlt') {
+    const i = exitKeyDown.findIndex(k => k === 'LAlt')
+    exitKeyDown.splice(i, 1)
+  }
+})
+
+const mousemove = listen<Mouse>('mouse_move', event => {
+  const [x, y] = event.payload.coords
+  if (mouse.coords.x === centerCoords.x && mouse.coords.y === centerCoords.y) {
+    mouse.coords.x = x
+    mouse.coords.y = y
+    return
+  }
+  const diffX = x - mouse.coords.x
+  const diffY = y - mouse.coords.y
+  mouse.speed = Math.max(Math.min(Math.sqrt(Math.pow(diffX, 2) + Math.pow(diffY, 2)), mouse.maxSpeed), mouse.minSpeed)
+  mouse.direction.x = diffX
+  mouse.direction.y = diffY
+  mouse.coords.x = x
+  mouse.coords.y = y
+})
+
+const mouseidle = listen<Mouse>('mouse_idle', event => {
+  const [x, y] = event.payload.coords
+  const coordsKey = `${x}-${y}`
+  const count = coordsStatistics.get(coordsKey) || 0
+  coordsStatistics.set(coordsKey, count + 1)
+  if (mostRecentlyCoordsCount < count + 1) {
+    centerCoords.x = x
+    centerCoords.y = y
+    mostRecentlyCoordsCount = count + 1
+  }
+  if (coordsStatistics.size > 100) {
+    for (const key in coordsStatistics.keys()) {
+      if (key !== `${centerCoords.x}-${centerCoords.y}`) {
+        coordsStatistics.delete(key)
+      }
+    }
+  }
+  requestAnimationFrame(() => {
+    mouse.speed = 0
+    mouse.direction.x = 0
+    mouse.direction.y = 0
+  })
+})
+
+const brightness = listen<Brightness>('screen_brightness', event => {
+  const median = event.payload.brightness[1]
+  if (median <= (255 / 2)) {
+    draw.color = `white`
+  } else if (median > 255 / 2) {
+    draw.color = `black`
+  }
+})
 
 const update = (delta: number) => {
   const canvasList = [canvas0.value, canvas1.value, canvas2.value]
   if (canvasList.some(c => c === null)) return
+
+  if (mouse.speed !== 0) {
+    cancelAnimFn.forEach(fn => fn())
+    cancelAnimFn.splice(0, cancelAnimFn.length)
+  }
 
   canvasList.forEach((canvas, canvasIndex) => {
     const ctx = canvas!.getContext('2d')
@@ -67,15 +175,43 @@ const update = (delta: number) => {
     if (ctx === null) return
 
     ctx.clearRect(0, 0, w, h)
-    ctx.fillStyle = '#000'
+    ctx.fillStyle = draw.color
 
-    const n = Object.keys(moveDirection).filter(k => moveDirection[k] !== 0).length || 1
-    position.x += (moveSpeed / n / 10) * delta * moveDirection.x
-    position.y += (moveSpeed / n / 10) * delta * moveDirection.y
-    position.z += (moveSpeed / n / 10) * delta * moveDirection.z
+    const pn = [player.direction.x, player.direction.y, player.direction.z].filter(d => d !== 0).length || 1
+    player.position.x += (player.speed / pn / coef.pos) * delta * player.direction.x
+    player.position.y += (player.speed / pn / coef.pos) * delta * player.direction.y
+    player.position.z += (player.speed / pn / coef.pos) * delta * player.direction.z
+
+    const mn = [mouse.direction.x, mouse.direction.y].filter(d => d !== 0).length || 1
+
+    mouse.position.x = mouse.$position.x
+    mouse.position.y = mouse.$position.y
+    mouse.$position.x += (mouse.speed / mn / coef.pos) * delta * mouse.direction.x
+    mouse.$position.y += (mouse.speed / mn / coef.pos) * delta * mouse.direction.y
+
+    const cancel0 = animate({
+      start: mouse.position.x,
+      end: mouse.$position.x,
+      duration: 1000,
+      easeFn: easeInOutSine,
+      update: v => {
+        mouse.position.x = v
+      },
+    })
+    const cancel1 = animate({
+      start: mouse.position.y,
+      end: mouse.$position.y,
+      duration: 1000,
+      easeFn: easeInOutSine,
+      update: v => {
+        mouse.position.y = v
+      },
+    })
+    cancelAnimFn.push(cancel0)
+    cancelAnimFn.push(cancel1)
 
     // z = 0 ~ 2
-    const rawZ = position.z / 200 + canvasIndex
+    const rawZ = player.position.z / coef.z + canvasIndex
     const progressZ = rawZ < 0 ? (2 - Math.abs(rawZ % 2)) / 2 : (rawZ % 2) / 2
     const scale = 0.6 + progressZ
     const opacity = progressZ < 0.5 ? progressZ / 0.5 : (1 - progressZ) / 0.5
@@ -117,12 +253,14 @@ const update = (delta: number) => {
         // row
         const rowNum = colIndex % 2 === 0 ? 6 : 3
         arr(rowNum).forEach((_, rowIndex) => {
+          const posX = player.position.x + mouse.position.x
+          const posY = player.position.y + mouse.position.y
           const offsetX = maxDistanceX * colIndex / 4
           const offsetY = h / (rowNum * 2) + (h / rowNum) * rowIndex
-          const rawX = (position.x + offsetX) % maxDistanceX + (side === 0 ? 0 : rightStartPosX)
-          const rawY = (position.y + offsetY) % maxDistanceY
-          const x = position.x < -offsetX ? maxDistanceX + rawX : rawX
-          const y = position.y < -offsetY ? maxDistanceY + rawY : rawY
+          const rawX = (posX + offsetX) % maxDistanceX + (side === 0 ? 0 : rightStartPosX)
+          const rawY = (posY + offsetY) % maxDistanceY
+          const x = posX < -offsetX ? maxDistanceX + rawX : rawX
+          const y = posY < -offsetY ? maxDistanceY + rawY : rawY
           drawSpot(x, y, side === 0 ? maxRadius * leftProgress(x, y) : maxRadius * rightProgress(x, y))
         })
       })
@@ -145,74 +283,20 @@ const resizeCanvas = () => {
   }
 }
 
-const handleKeyDown = (event: KeyboardEvent) => {
-  const { code } = event
-  if (code === 'KeyW') {
-    moveDirection.z += 1
-  } else if (code === 'KeyA') {
-    moveDirection.x += 1
-  } else if (code === 'KeyS') {
-    moveDirection.z -= 1
-  } else if (code === 'KeyD') {
-    moveDirection.x -= 1
-  }
-  if (moveDirection.x > 1) {
-    moveDirection.x = 1
-  } else if (moveDirection.x < -1) {
-    moveDirection.x = -1
-  }
-  if (moveDirection.z > 1) {
-    moveDirection.z = 1
-  } else if (moveDirection.z < -1) {
-    moveDirection.z = -1
-  }
-}
-const handleKeyUp = (event: KeyboardEvent) => {
-  const { code } = event
-  if (code === 'KeyW') {
-    moveDirection.z -= 1
-  } else if (code === 'KeyA') {
-    moveDirection.x -= 1
-  } else if (code === 'KeyS') {
-    moveDirection.z += 1
-  } else if (code === 'KeyD') {
-    moveDirection.x += 1
-  }
-  if (moveDirection.x > 1) {
-    moveDirection.x = 1
-  } else if (moveDirection.x < -1) {
-    moveDirection.x = -1
-  }
-  if (moveDirection.z > 1) {
-    moveDirection.z = 1
-  } else if (moveDirection.z < -1) {
-    moveDirection.z = -1
-  }
-}
-const handlePointerMove = (event: PointerEvent) => {
-  const { screenX, screenY } = event
-  mouseCoords.x = screenX
-  mouseCoords.y = screenY
-}
-
 onMounted(() => {
   resizeCanvas()
-  window.addEventListener('keydown', handleKeyDown)
-  window.addEventListener('keyup', handleKeyUp)
-  window.addEventListener('pointermove', handlePointerMove)
   window.addEventListener('resize', resizeCanvas)
   setLoop(update)
-  // update(0)
 })
 
 onUnmounted(() => {
-  // keydown.then(unlisten => unlisten())
-  // keyup.then(unlisten => unlisten())
-  // mousemove.then(unlisten => unlisten())
-  window.removeEventListener('keydown', handleKeyDown)
-  window.removeEventListener('keyup', handleKeyUp)
-  window.removeEventListener('pointermove', handlePointerMove)
+  keydown.then(unlisten => unlisten())
+  keyup.then(unlisten => unlisten())
+  mousemove.then(unlisten => unlisten())
+  mouseidle.then(unlisten => unlisten())
+  brightness.then(unlisten => unlisten())
   window.removeEventListener('resize', resizeCanvas)
+  stopLoop()
 })
 </script>
 
@@ -230,9 +314,11 @@ onUnmounted(() => {
   width: 100vw;
   height: 100vh;
 }
+
 .canvas {
   position: absolute;
   top: 0;
   left: 0;
+  mix-blend-mode: difference;
 }
 </style>

@@ -16,6 +16,12 @@
         "all": false,
         "open": true
       },
+      "process": {
+        "all": false,
+        "exit": true,
+        "relaunch": false,
+        "relaunchDangerousAllowSymlinkMacos": false
+      },
       "window": {
         "all": false,
         "center": false,
@@ -26,7 +32,7 @@
         "minimize": false,
         "print": false,
         "requestUserAttention": false,
-        "setAlwaysOnTop": false,
+        "setAlwaysOnTop": true,
         "setClosable": false,
         "setContentProtected": false,
         "setCursorGrab": false,
@@ -70,8 +76,8 @@
     },
     "bundle": {
       "active": true,
-      "targets": "all",
-      "identifier": "com.tauri.dev",
+      "targets": ["msi"],
+      "identifier": "app.fpsmotioncues",
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
